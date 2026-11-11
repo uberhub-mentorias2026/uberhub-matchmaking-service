@@ -26,43 +26,7 @@ O pipeline completo ocorre de forma isolada dentro do serviço de matching, proc
 
 5. **Explicação via LLM:** Passo opcional para justificar o match (o sistema funciona normalmente sem esta etapa).
 
-## 4. Pontos Chave e Resolução de Concorrência
-
-Para evitar alocações indevidas devido ao atraso na atualização do índice de busca (eventual consistency), o sistema implementa mecanismos rigorosos:
-
-- **Fonte da Verdade Isolada:** O Sistema de Origem aparece como uma caixa própria, atuando como a fonte da verdade. Ele recebe as consultas de ida e volta da etapa de revalidação e emite eventos de atualização para o índice do serviço de matching.
-
-- **Prevenção de Dados Defasados:** Como demonstrado em simulações, se o Admin aloca uma vaga e cria uma nova necessidade imediatamente, o evento de atualização do índice pode ainda não ter sido processado. A etapa de **Revalidação em lote** resolve isso, checando diretamente na fonte da verdade e removendo candidatos defasados antes do ranqueamento final.
-
-- **Alocação Atômica:** A operação de alocar a vaga ocorre junto com a revalidação e obedece à regra estrita `"só aloca se vagas > 0"`. Este é o limite final da solução de concorrência.
-
-## 5. Algoritmo de Scoring
-
-O cálculo do score de cada mentor utiliza a seguinte equação e distribuição de pesos:
-
-```
-Score Total = (
-  expertise_match_weight * expertise_score +
-  availability_match_weight * availability_score +
-  language_match_weight * language_score +
-  format_match_weight * format_score +
-  experience_match_weight * experience_score
-)
-```
-
-**Pesos Padrão:**
-
-- Expertise: 0.40 (40%)
-
-- Availability: 0.25 (25%)
-
-- Language: 0.15 (15%)
-
-- Format: 0.10 (10%)
-
-- Experience: 0.10 (10%)
-
-## 6. Endpoints Internos
+## 4. Endpoints Internos
 
 |            |                                     |                            |
 | ---------- | ----------------------------------- | -------------------------- |
