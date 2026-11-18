@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 import psycopg
 from psycopg.types.json import Jsonb
 from pgvector.psycopg import register_vector
@@ -7,10 +7,12 @@ from app.config import (
     ALGORITHM_VERSION,
     CANDIDATE_MARGIN_MULTIPLIER,
     DATABASE_URL,
+    DEFAULT_WEIGHTS,
 )
 from app.embeddings import generate_embedding
 from app.origin_client import FakeOriginClient
-from app.schemas import CandidateMatch, MatchRequestCreate, ScoreBreakdown
+from app.schemas import CandidateMatch, MatchRequestCreate
+from app.scoring import calculate_candidate_score
 
 
 def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None:
@@ -27,6 +29,11 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                 SELECT
                     mentor_id,
                     name,
+                    skills,
+                    format,
+                    experience_years,
+                    max_load,
+                    availability_slots,
                     1 - (embedding <=> %(query_vec)s::vector) AS cosine_sim
                 FROM mentors_index
                 WHERE is_active = TRUE
@@ -54,35 +61,47 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
             origin_statuses = FakeOriginClient().revalidate_batch(candidate_ids)
 
             validated_candidates: list[CandidateMatch] = []
-            for mentor_id, name, cosine_sim in raw_candidates:
+            for (
+                mentor_id,
+                name,
+                skills,
+                mentor_format,
+                experience_years,
+                max_load,
+                mentor_slots,
+                cosine_sim,
+            ) in raw_candidates:
                 status = origin_statuses.get(mentor_id)
                 if not status or not status.is_active or status.available_slots <= 0:
                     continue
 
-                # Normaliza cosseno [-1, 1] -> [0, 1] para o ranking básico da fatia vertical
-                normalized_sim = round(
-                    max(0.0, min(1.0, (float(cosine_sim) + 1.0) / 2.0)), 4
+                total_score, breakdown = calculate_candidate_score(
+                    requested_tags=payload.tags,
+                    mentor_skills=skills,
+                    cosine_sim=float(cosine_sim),
+                    experience_years=experience_years,
+                    min_experience_years=payload.filters.min_experience_years,
+                    available_slots=status.available_slots,
+                    max_load=max_load,
+                    requested_slots=payload.filters.availability_slots,
+                    mentor_slots=mentor_slots,
+                    requested_format=payload.filters.format,
+                    mentor_format=mentor_format,
+                    weights=DEFAULT_WEIGHTS,
                 )
 
-                breakdown = ScoreBreakdown(
-                    skills_overlap=0.0,
-                    semantic_similarity=normalized_sim,
-                    seniority_fit=0.0,
-                    mentor_load=0.0,
-                    goal_alignment=0.0,
-                )
                 validated_candidates.append(
                     CandidateMatch(
                         mentor_id=mentor_id,
                         name=name,
                         rank=0,
-                        total_score=normalized_sim,
+                        total_score=total_score,
                         score_breakdown=breakdown,
                         explanation=None,
                     )
                 )
 
-            # Ordena e aplica corte Top-N
+            # Ordena, aplica corte Top-N e atribui posições
             validated_candidates.sort(key=lambda c: c.total_score, reverse=True)
             top_n = validated_candidates[: payload.limit]
             for idx, candidate in enumerate(top_n, start=1):
@@ -91,6 +110,27 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
             serialized_result = [c.model_dump() for c in top_n]
 
             with conn.cursor() as cur:
+                # Persiste trilha de auditoria por mentor recomendado
+                for candidate in top_n:
+                    cur.execute(
+                        """
+                        INSERT INTO match_decisions (
+                            id, match_request_id, mentor_id, rank_position,
+                            total_score, score_breakdown, algorithm_version
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s);
+                        """,
+                        (
+                            uuid4(),
+                            request_id,
+                            candidate.mentor_id,
+                            candidate.rank,
+                            candidate.total_score,
+                            Jsonb(candidate.score_breakdown.model_dump()),
+                            ALGORITHM_VERSION,
+                        ),
+                    )
+
                 cur.execute(
                     """
                     UPDATE match_requests

@@ -10,9 +10,11 @@ from app.schemas import (
     MatchRequestAccepted,
     MatchRequestCreate,
     MatchResultResponse,
+    MentorDecisionAudit,
+    ScoreBreakdown,
 )
 
-app = FastAPI(title="Matchmaking Service", version="0.1.0")
+app = FastAPI(title="Matchmaking Service", version="0.2.0")
 
 
 @app.get("/health")
@@ -96,3 +98,35 @@ def get_match_request(match_request_id: UUID) -> MatchResultResponse:
         candidates=candidates,
         created_at=row[5],
     )
+
+
+@app.get("/decisions/{mentor_id}", response_model=list[MentorDecisionAudit])
+def get_mentor_decisions(mentor_id: str, limit: int = 20) -> list[MentorDecisionAudit]:
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, match_request_id, mentor_id, rank_position,
+                       total_score, score_breakdown, algorithm_version, created_at
+                FROM match_decisions
+                WHERE mentor_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s;
+                """,
+                (mentor_id, limit),
+            )
+            rows = cur.fetchall()
+
+    return [
+        MentorDecisionAudit(
+            decision_id=row[0],
+            match_request_id=row[1],
+            mentor_id=row[2],
+            rank_position=row[3],
+            total_score=float(row[4]),
+            score_breakdown=ScoreBreakdown(**row[5]),
+            algorithm_version=row[6],
+            created_at=row[7],
+        )
+        for row in rows
+    ]
