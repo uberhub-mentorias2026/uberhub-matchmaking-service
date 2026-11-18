@@ -1,0 +1,190 @@
+{
+  "mentors": [
+    {
+      "mentor_id": "m_001",
+      "name": "Helena Costa",
+      "bio": "Staff Backend Engineer com foco em sistemas distribuídos, mensageria com Kafka, Java e arquitetura de microsserviços resilientes.",
+      "skills": ["java", "spring-boot", "kafka", "microsservicos", "arquitetura"],
+      "language": "pt-BR",
+      "format": "online",
+      "experience_years": 9,
+      "current_load": 1,
+      "max_load": 3,
+      "availability_slots": ["SEG_NOITE", "QUA_NOITE"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_002",
+      "name": "Rafael Mendes",
+      "bio": "Tech Lead especializado em transição de carreira para liderança técnica, gestão de conflitos em squads e engenharia de plataforma.",
+      "skills": ["lideranca", "tech-lead", "gestao", "arquitetura", "kubernetes"],
+      "language": "pt-BR",
+      "format": "hibrido",
+      "experience_years": 11,
+      "current_load": 2,
+      "max_load": 3,
+      "availability_slots": ["TER_NOITE", "QUI_NOITE"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_003",
+      "name": "Camila Nogueira",
+      "bio": "Engenheira de Dados e Machine Learning, construção de pipelines ETL, modelagem em PostgreSQL e implantação de modelos em produção.",
+      "skills": ["python", "sql", "postgresql", "machine-learning", "etl"],
+      "language": "pt-BR",
+      "format": "online",
+      "experience_years": 6,
+      "current_load": 0,
+      "max_load": 4,
+      "availability_slots": ["SEG_NOITE", "QUI_NOITE"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_004",
+      "name": "Tiago Bastos",
+      "bio": "Desenvolvedor Frontend Sênior especialista em React, TypeScript, design systems, acessibilidade web e performance de renderização.",
+      "skills": ["react", "typescript", "css", "acessibilidade", "frontend"],
+      "language": "pt-BR",
+      "format": "online",
+      "experience_years": 7,
+      "current_load": 1,
+      "max_load": 3,
+      "availability_slots": ["QUA_NOITE", "SEX_TARDE"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_005",
+      "name": "Bruna Ferreira",
+      "bio": "Arquiteta de Soluções Cloud AWS, automação de infraestrutura como código com Terraform, observabilidade e FinOps.",
+      "skills": ["aws", "terraform", "devops", "observabilidade", "docker"],
+      "language": "pt-BR",
+      "format": "online",
+      "experience_years": 8,
+      "current_load": 3,
+      "max_load": 3,
+      "availability_slots": ["TER_NOITE"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_006",
+      "name": "Lucas Andrade",
+      "bio": "Engenheiro de Software Backend em C# e .NET, otimização de queries relacionais e integração de APIs bancárias.",
+      "skills": ["csharp", "dotnet", "sql", "apis", "backend"],
+      "language": "pt-BR",
+      "format": "presencial",
+      "experience_years": 5,
+      "current_load": 1,
+      "max_load": 3,
+      "availability_slots": ["SAB_MANHA"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_007",
+      "name": "Mariana Silva",
+      "bio": "Principal Engineer em sistemas de alta escala, event-driven architecture e mentoria para engenheiros plenos virarem sêniores.",
+      "skills": ["go", "sistemas-distribuidos", "event-driven", "carreira"],
+      "language": "pt-BR",
+      "format": "online",
+      "experience_years": 12,
+      "current_load": 1,
+      "max_load": 3,
+      "availability_slots": ["TER_NOITE", "QUI_NOITE"],
+      "is_active": true
+    },
+    {
+      "mentor_id": "m_008",
+      "name": "André Souza",
+      "bio": "Especialista em Segurança da Informação, AppSec e revisão de código.",
+      "skills": ["seguranca", "appsec", "java", "arquitetura"],
+      "language": "pt-BR",
+      "format": "online",
+      "experience_years": 10,
+      "current_load": 0,
+      "max_load": 2,
+      "availability_slots": ["SEG_NOITE"],
+      "is_active": false
+    }
+  ],
+  "test_cases": [
+    {
+      "case_id": "tc_01",
+      "description": "Match direto por tags de backend Java e microsserviços",
+      "request": {
+        "mentee_need_text": "Preciso evoluir na arquitetura de microsserviços com Java e Spring Boot.",
+        "tags": ["java", "microsservicos", "arquitetura"],
+        "filters": {
+          "language": "pt-BR",
+          "format": "online",
+          "availability_slots": ["SEG_NOITE"],
+          "min_experience_years": 5
+        },
+        "limit": 3
+      },
+      "expected_mentor_ids": ["m_001", "m_007"]
+    },
+    {
+      "case_id": "tc_02",
+      "description": "Gap lexical: pedido usa 'mensageria assíncrona' e 'escalabilidade', sem bater nas tags exatas",
+      "request": {
+        "mentee_need_text": "Quero aprender a desenhar sistemas orientados a eventos com mensageria assíncrona e alta escala.",
+        "tags": ["mensageria", "escalabilidade"],
+        "filters": {
+          "language": "pt-BR",
+          "format": "online",
+          "availability_slots": ["TER_NOITE"],
+          "min_experience_years": 6
+        },
+        "limit": 3
+      },
+      "expected_mentor_ids": ["m_007", "m_001"]
+    },
+    {
+      "case_id": "tc_03",
+      "description": "Transição para liderança técnica",
+      "request": {
+        "mentee_need_text": "Acabei de assumir meu primeiro time como Tech Lead e preciso de apoio em gestão técnica.",
+        "tags": ["lideranca", "tech-lead"],
+        "filters": {
+          "language": "pt-BR",
+          "format": "online",
+          "availability_slots": ["TER_NOITE"],
+          "min_experience_years": 5
+        },
+        "limit": 3
+      },
+      "expected_mentor_ids": ["m_002", "m_007"]
+    },
+    {
+      "case_id": "tc_04",
+      "description": "Banco de dados e pipelines de dados",
+      "request": {
+        "mentee_need_text": "Busco ajuda para estruturar pipelines de ingestão de dados e tunar consultas no Postgres.",
+        "tags": ["postgresql", "etl", "python"],
+        "filters": {
+          "language": "pt-BR",
+          "format": "online",
+          "availability_slots": ["QUI_NOITE"],
+          "min_experience_years": 4
+        },
+        "limit": 3
+      },
+      "expected_mentor_ids": ["m_003"]
+    },
+    {
+      "case_id": "tc_05",
+      "description": "Frontend moderno e interfaces",
+      "request": {
+        "mentee_need_text": "Quero melhorar a arquitetura de componentes React e performance no navegador.",
+        "tags": ["react", "typescript"],
+        "filters": {
+          "language": "pt-BR",
+          "format": "online",
+          "availability_slots": ["QUA_NOITE"],
+          "min_experience_years": 4
+        },
+        "limit": 3
+      },
+      "expected_mentor_ids": ["m_004"]
+    }
+  ]
+}
