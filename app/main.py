@@ -1,25 +1,58 @@
+from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, status
 import psycopg
 from psycopg.types.json import Jsonb
 
 from app.config import ALGORITHM_VERSION, DATABASE_URL
+from app.event_consumer import event_consumer
+from app.indexer import upsert_mentor_event
 from app.matcher import process_match_request
 from app.schemas import (
     CandidateMatch,
+    EventIngestionResult,
     MatchRequestAccepted,
     MatchRequestCreate,
     MatchResultResponse,
     MentorDecisionAudit,
+    MentorProfileEvent,
     ScoreBreakdown,
 )
 
-app = FastAPI(title="Matchmaking Service", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await event_consumer.start()
+    yield
+    await event_consumer.stop()
+
+
+app = FastAPI(title="Matchmaking Service", version="0.3.0", lifespan=lifespan)
 
 
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post(
+    "/events/mentors",
+    response_model=EventIngestionResult,
+    status_code=status.HTTP_200_OK,
+)
+def ingest_mentor_event(event: MentorProfileEvent) -> EventIngestionResult:
+    """Endpoint síncrono/webhook para testar upsert versionado e idempotência."""
+    return upsert_mentor_event(event)
+
+
+@app.post(
+    "/events/mentors/async",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enqueue_mentor_event(event: MentorProfileEvent) -> dict[str, str]:
+    """Enfileira o evento para o consumer assíncrono em background."""
+    await event_consumer.publish(event)
+    return {"event_id": event.event_id, "status": "queued"}
 
 
 @app.post(

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, Field
@@ -46,7 +46,7 @@ class CandidateMatch(BaseModel):
 
 class MatchRequestAccepted(BaseModel):
     match_request_id: UUID
-    status: Literal["processing", "completed", "failed"] = "processsing"
+    status: Literal["processing", "completed", "failed"] = "processing"
 
 
 class MatchResultResponse(BaseModel):
@@ -73,3 +73,26 @@ class MentorDecisionAudit(BaseModel):
     score_breakdown: ScoreBreakdown
     algorithm_version: str
     created_at: datetime
+
+
+class MentorProfileEvent(BaseModel):
+    event_id: str = Field(..., min_length=3)
+    version: int = Field(..., ge=1)
+    mentor_id: str
+    name: str
+    bio: str
+    skills: list[str] = Field(default_factory=list)
+    language: str = "pt-BR"
+    format: Literal["online", "presencial", "hibrido"] = "online"
+    experience_years: int = Field(default=0, ge=0)
+    current_load: int = Field(default=0, ge=0)
+    max_load: int = Field(default=3, ge=1)
+    availability_slots: list[str] = Field(default_factory=list)
+    is_active: bool = True
+
+
+class EventIngestionResult(BaseModel):
+    event_id: str
+    mentor_id: str
+    version: int
+    status: Literal["applied", "duplicate_ignored", "stale_version_ignored"]

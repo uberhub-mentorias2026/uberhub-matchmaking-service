@@ -5,9 +5,7 @@ def _normalize_tokens(items: list[str]) -> set[str]:
     return {item.strip().lower() for item in items if item.strip()}
 
 
-def compute_skills_overlap(
-    requested_tags: list[str], mentor_skills: list[str]
-) -> float:
+def compute_skills_overlap(requested_tags: list[str], mentor_skills: list[str]) -> float:
     req = _normalize_tokens(requested_tags)
     if not req:
         return 1.0
@@ -15,8 +13,11 @@ def compute_skills_overlap(
     return len(req & skills) / len(req)
 
 
-def compute_semantic_similarity(cosine_sim: float) -> float:
-    return max(0.0, min(1.0, float(cosine_sim)))
+def compute_hybrid_relevance(cosine_sim: float, rrf_raw: float, rrf_k: int = 60) -> float:
+    max_rrf = 2.0 / (rrf_k + 1)
+    norm_rrf = max(0.0, min(1.0, float(rrf_raw) / max_rrf))
+    norm_cos = max(0.0, min(1.0, float(cosine_sim)))
+    return (0.55 * norm_cos) + (0.45 * norm_rrf)
 
 
 def compute_seniority_fit(experience_years: int, min_experience_years: int) -> float:
@@ -24,7 +25,6 @@ def compute_seniority_fit(experience_years: int, min_experience_years: int) -> f
         return min(1.0, experience_years / 10.0)
     if experience_years < min_experience_years:
         return max(0.0, experience_years / min_experience_years)
-    # 0.70 por atingir o mínimo + até 0.30 de bônus por até +5 anos de experiência adicional
     bonus = min(1.0, (experience_years - min_experience_years) / 5.0)
     return 0.70 + (0.30 * bonus)
 
@@ -56,6 +56,7 @@ def calculate_candidate_score(
     requested_tags: list[str],
     mentor_skills: list[str],
     cosine_sim: float,
+    rrf_raw: float,
     experience_years: int,
     min_experience_years: int,
     available_slots: int,
@@ -66,19 +67,20 @@ def calculate_candidate_score(
     mentor_format: str,
     weights: ScoreWeights,
 ) -> tuple[float, ScoreBreakdown]:
+    skills_score = compute_skills_overlap(requested_tags, mentor_skills)
+    hybrid_score = compute_hybrid_relevance(cosine_sim, rrf_raw)
+    seniority_score = compute_seniority_fit(experience_years, min_experience_years)
+    load_score = compute_mentor_load(available_slots, max_load)
+    goal_score = compute_goal_alignment(
+        requested_slots, mentor_slots, requested_format, mentor_format
+    )
+
     breakdown = ScoreBreakdown(
-        skills_overlap=round(compute_skills_overlap(requested_tags, mentor_skills), 4),
-        semantic_similarity=round(compute_semantic_similarity(cosine_sim), 4),
-        seniority_fit=round(
-            compute_seniority_fit(experience_years, min_experience_years), 4
-        ),
-        mentor_load=round(compute_mentor_load(available_slots, max_load), 4),
-        goal_alignment=round(
-            compute_goal_alignment(
-                requested_slots, mentor_slots, requested_format, mentor_format
-            ),
-            4,
-        ),
+        skills_overlap=round(skills_score, 4),
+        semantic_similarity=round(hybrid_score, 4),
+        seniority_fit=round(seniority_score, 4),
+        mentor_load=round(load_score, 4),
+        goal_alignment=round(goal_score, 4),
     )
 
     total_weight = (
@@ -89,12 +91,15 @@ def calculate_candidate_score(
         + weights.goal_alignment
     ) or 1.0
 
+    technical_fit = (skills_score + hybrid_score) / 2.0
+    operational_multiplier = 1.0 if technical_fit >= 0.25 else 0.35
+
     weighted_sum = (
         breakdown.skills_overlap * weights.skills_overlap
         + breakdown.semantic_similarity * weights.semantic_similarity
-        + breakdown.seniority_fit * weights.seniority_fit
-        + breakdown.mentor_load * weights.mentor_load
-        + breakdown.goal_alignment * weights.goal_alignment
+        + (breakdown.seniority_fit * weights.seniority_fit) * operational_multiplier
+        + (breakdown.mentor_load * weights.mentor_load) * operational_multiplier
+        + (breakdown.goal_alignment * weights.goal_alignment) * operational_multiplier
     ) / total_weight
 
     return round(max(0.0, min(1.0, weighted_sum)), 4), breakdown
