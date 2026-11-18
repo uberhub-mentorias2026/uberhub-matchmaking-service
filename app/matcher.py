@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID, uuid4
 import psycopg
 from psycopg.types.json import Jsonb
@@ -11,9 +12,15 @@ from app.config import (
     RRF_K,
 )
 from app.embeddings import generate_embedding
-from app.origin_client import FakeOriginClient
+from app.origin_client import (
+    OriginMentorStatus,
+    OriginServiceUnavailableError,
+    ResilientOriginClient,
+)
 from app.schemas import CandidateMatch, MatchRequestCreate
 from app.scoring import calculate_candidate_score
+
+logger = logging.getLogger("matchmaking.matcher")
 
 HYBRID_SEARCH_SQL = """
     WITH filtered_mentors AS (
@@ -23,6 +30,7 @@ HYBRID_SEARCH_SQL = """
             skills,
             format,
             experience_years,
+            current_load,
             max_load,
             availability_slots,
             embedding,
@@ -68,6 +76,7 @@ HYBRID_SEARCH_SQL = """
         f.skills,
         f.format,
         f.experience_years,
+        f.current_load,
         f.max_load,
         f.availability_slots,
         r.cosine_sim,
@@ -79,13 +88,18 @@ HYBRID_SEARCH_SQL = """
 """
 
 
-def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None:
+def process_match_request(
+    request_id: UUID,
+    payload: MatchRequestCreate,
+    origin_client: ResilientOriginClient | None = None,
+) -> None:
     query_text = f"{payload.mentee_need_text} {' '.join(payload.tags)}".strip()
     query_vec = generate_embedding(query_text)
     fts_terms = " OR ".join(
         token for token in query_text.replace("-", " ").split() if len(token) >= 3
     )
     candidate_limit = payload.limit * CANDIDATE_MARGIN_MULTIPLIER
+    client = origin_client or ResilientOriginClient()
 
     try:
         with psycopg.connect(DATABASE_URL) as conn:
@@ -107,7 +121,26 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                 raw_candidates = cur.fetchall()
 
             candidate_ids = [row[0] for row in raw_candidates]
-            origin_statuses = FakeOriginClient().revalidate_batch(candidate_ids)
+
+            # Etapa 3: Revalidação em lote com fallback gracioso para cache local
+            revalidation_status = "validated"
+            try:
+                origin_statuses = client.revalidate_batch(candidate_ids)
+            except OriginServiceUnavailableError as exc:
+                logger.warning(
+                    "Origem indisponível para request %s (%s). Aplicando fallback local.",
+                    request_id,
+                    exc,
+                )
+                revalidation_status = "unrevalidated"
+                origin_statuses = {
+                    row[0]: OriginMentorStatus(
+                        mentor_id=row[0],
+                        is_active=True,
+                        available_slots=max(0, row[6] - row[5]),
+                    )
+                    for row in raw_candidates
+                }
 
             validated_candidates: list[CandidateMatch] = []
             for (
@@ -116,6 +149,7 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                 skills,
                 mentor_format,
                 experience_years,
+                _current_load,
                 max_load,
                 mentor_slots,
                 cosine_sim,
@@ -141,6 +175,14 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                     weights=DEFAULT_WEIGHTS,
                 )
 
+                explanation = None
+                if payload.include_explanation:
+                    explanation = (
+                        f"Score {total_score:.2f} | Skills: {breakdown.skills_overlap:.0%}, "
+                        f"Relevância Híbrida: {breakdown.semantic_similarity:.0%}, "
+                        f"Vagas ({revalidation_status}): {status.available_slots}/{max_load}."
+                    )
+
                 validated_candidates.append(
                     CandidateMatch(
                         mentor_id=mentor_id,
@@ -148,7 +190,7 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                         rank=0,
                         total_score=total_score,
                         score_breakdown=breakdown,
-                        explanation=None,
+                        explanation=explanation,
                     )
                 )
 
@@ -184,7 +226,7 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                     """
                     UPDATE match_requests
                     SET status = 'completed',
-                        revalidation_status = 'validated',
+                        revalidation_status = %(revalidation_status)s,
                         result = %(result)s,
                         algorithm_version = %(algorithm_version)s,
                         updated_at = NOW()
@@ -192,6 +234,7 @@ def process_match_request(request_id: UUID, payload: MatchRequestCreate) -> None
                     """,
                     {
                         "id": request_id,
+                        "revalidation_status": revalidation_status,
                         "result": Jsonb(serialized_result),
                         "algorithm_version": ALGORITHM_VERSION,
                     },

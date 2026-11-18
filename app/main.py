@@ -11,6 +11,7 @@ from app.matcher import process_match_request
 from app.schemas import (
     CandidateMatch,
     EventIngestionResult,
+    MatchFeedbackCreate,
     MatchRequestAccepted,
     MatchRequestCreate,
     MatchResultResponse,
@@ -27,7 +28,7 @@ async def lifespan(app: FastAPI):
     await event_consumer.stop()
 
 
-app = FastAPI(title="Matchmaking Service", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Matchmaking Service", version="0.4.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -41,7 +42,6 @@ def healthcheck() -> dict[str, str]:
     status_code=status.HTTP_200_OK,
 )
 def ingest_mentor_event(event: MentorProfileEvent) -> EventIngestionResult:
-    """Endpoint síncrono/webhook para testar upsert versionado e idempotência."""
     return upsert_mentor_event(event)
 
 
@@ -50,7 +50,6 @@ def ingest_mentor_event(event: MentorProfileEvent) -> EventIngestionResult:
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def enqueue_mentor_event(event: MentorProfileEvent) -> dict[str, str]:
-    """Enfileira o evento para o consumer assíncrono em background."""
     await event_consumer.publish(event)
     return {"event_id": event.event_id, "status": "queued"}
 
@@ -131,6 +130,58 @@ def get_match_request(match_request_id: UUID) -> MatchResultResponse:
         candidates=candidates,
         created_at=row[5],
     )
+
+
+@app.post(
+    "/match-requests/{match_request_id}/feedback",
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_match_feedback(
+    match_request_id: UUID,
+    feedback: MatchFeedbackCreate,
+) -> dict[str, str]:
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT result FROM match_requests WHERE id = %s;",
+                (match_request_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Match request not found.",
+                )
+
+            recommended_ids = {item["mentor_id"] for item in (row[0] or [])}
+            if feedback.mentor_id not in recommended_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Mentor was not recommended in this match request.",
+                )
+
+            feedback_id = uuid4()
+            cur.execute(
+                """
+                INSERT INTO match_feedback (id, match_request_id, mentor_id, decision, reason)
+                VALUES (%s, %s, %s, %s, %s);
+                """,
+                (
+                    feedback_id,
+                    match_request_id,
+                    feedback.mentor_id,
+                    feedback.decision,
+                    feedback.reason,
+                ),
+            )
+        conn.commit()
+
+    return {
+        "feedback_id": str(feedback_id),
+        "match_request_id": str(match_request_id),
+        "mentor_id": feedback.mentor_id,
+        "decision": feedback.decision,
+    }
 
 
 @app.get("/decisions/{mentor_id}", response_model=list[MentorDecisionAudit])
