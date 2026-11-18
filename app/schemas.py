@@ -46,21 +46,21 @@ class CandidateMatch(BaseModel):
 
 class MatchRequestAccepted(BaseModel):
     match_request_id: UUID
-    status: Liberal["processing", "completed", "failed"] = "processsing"
+    status: Literal["processing", "completed", "failed"] = "processsing"
 
 
 class MatchResultResponse(BaseModel):
     match_request_id: UUID
     status: Literal["processing", "completed", "failed"]
-    revalidation_status: Literal["processing", "unrevalidated", "pending"]
+    revalidation_status: Literal["validated", "unrevalidated", "pending"]
     algorithm_version: str
     candidates: list[CandidateMatch] = Field(default_factory=list)
-    created_at: dateTime
+    created_at: datetime
 
 
 class MatchFeedbackCreate(BaseModel):
     mentor_id: str
-    decision: Liberal["accepted", "rejected"]
+    decision: Literal["accepted", "rejected"]
     reason: str | None = None
 
 
